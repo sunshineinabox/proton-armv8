@@ -1,0 +1,123 @@
+name: Sync
+
+# Builds each new Valve Proton tag for ARMv8.0: the newest stable (proton-11.0-*, no betas) and the
+# newest experimental (experimental-11.0-*), unless a release armv8-<tag> exists already.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Valve tag to build (empty: the newest of each channel)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      tags: ${{ steps.find.outputs.tags }}
+    steps:
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            tags=$INPUT_TAG
+          else
+            tags=
+            for pattern in 'proton-11.0-*' 'experimental-11.0-*'; do
+              newest=$(git ls-remote --tags --refs https://github.com/ValveSoftware/Proton.git "refs/tags/$pattern" |
+                       sed 's#.*refs/tags/##' | grep -vE -- '-(beta|rc)' | sort -V | tail -1)
+              [ -n "$newest" ] || continue
+              gh release view "armv8-$newest" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || tags="$tags $newest"
+            done
+          fi
+          echo "tags=$(printf '%s\n' $tags | jq -Rc . | jq -cs 'map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.tags != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.plan.outputs.tags) }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    env:
+      TAG: ${{ matrix.tag }}
+    steps:
+      - name: Free disk space
+        uses: endersonmenezes/free-disk-space@v3
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_swap: true
+          remove_packages: >-
+            azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox
+            postgresql* temurin-* mysql* dotnet-sdk-*
+          remove_packages_one_command: false
+          remove_folders: >-
+            /usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules
+            /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli
+            /usr/local/aws-sam-cli /usr/share/gradle
+          testing: false
+
+      - name: Host tools
+        run: sudo apt-get update && sudo apt-get install -y ccache fontforge-nox llvm zstd
+
+      - uses: actions/checkout@v6
+
+      - name: Channel
+        id: channel
+        run: case "$TAG" in experimental-*) echo "name=experimental" ;; *) echo "name=stable" ;; esac >> "$GITHUB_OUTPUT"
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.ccache
+          key: ccache-${{ steps.channel.outputs.name }}-${{ github.run_id }}
+          restore-keys: ccache-${{ steps.channel.outputs.name }}-
+
+      - name: Build
+        run: CCACHE_DIR="$HOME/.ccache" scripts/build.sh "$TAG" "$RUNNER_TEMP/work"
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.ccache
+          key: ccache-${{ steps.channel.outputs.name }}-${{ github.run_id }}
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=
+          [ "${{ steps.channel.outputs.name }}" = experimental ] && prerelease=--prerelease
+          f="$RUNNER_TEMP/work/proton-armv8-$TAG.tar.zst"
+          gh release create "armv8-$TAG" $prerelease --title "Proton ${TAG#*-} (ARMv8.0)" \
+            --notes "Valve's \`$TAG\` built for ARMv8.0 (no LSE atomics), with DXVK-Sarek (\`PROTON_DXVK_SAREK=1\`). Extract into \`compatibilitytools.d\`." \
+            "$f" "$f.sha256" "$f.sha512"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Build failed: $TAG"
+          gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q . ||
+            gh issue create --title "$title" \
+              --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. If the patches no longer apply to \`$TAG\`, refresh them."

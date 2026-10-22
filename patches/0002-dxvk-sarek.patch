@@ -1,0 +1,134 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sunshineinabox <aqemail@gmail.com>
+Date: Thu, 22 Oct 2026 10:26:45 -0700
+Subject: [PATCH 2/2] dxvk-sarek: build it in and select it with
+ PROTON_DXVK_SAREK
+
+Port Proton-CachyOS's DXVK-Sarek rules and proton switch, for GPUs that upstream DXVK leaves out such as the Adreno 610.
+---
+ Makefile.in                |  2 ++
+ extras/build-dxvk-sarek.mk | 45 ++++++++++++++++++++++++++++++++++++++
+ proton                     | 15 +++++++++++--
+ 3 files changed, 60 insertions(+), 2 deletions(-)
+ create mode 100644 extras/build-dxvk-sarek.mk
+
+diff --git a/Makefile.in b/Makefile.in
+index bf58af4f..db548a33 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -721,6 +721,8 @@ $(OBJ)/.dxvk-post-source:
+ 	echo "$(shell git -C $(SRCDIR) submodule status -- dxvk || echo no-git-repo-info)" > $(DST_LIBDIR)/wine/dxvk/version
+ 	touch $@
+ 
++include $(SRC)/extras/build-dxvk-sarek.mk
++
+ 
+ ##
+ ## dxvk-nvapi
+diff --git a/extras/build-dxvk-sarek.mk b/extras/build-dxvk-sarek.mk
+new file mode 100644
+index 00000000..56c35cf6
+--- /dev/null
++++ b/extras/build-dxvk-sarek.mk
+@@ -0,0 +1,45 @@
++##
++## dxvk-sarek
++##
++
++# DXVK-Sarek (pythonlover02/DXVK-Sarek), ported from Proton-CachyOS: built into lib/wine/dxvk-sarek and
++# selected per game with PROTON_DXVK_SAREK=1. Its source is checked out in extras/dxvk-sarek.
++
++# wine builds DLLs with the same names, we need to differentiate the timestamps
++DXVK_SAREK_i386_SOURCE_DATE_EPOCH := $(shell expr $(i386_SOURCE_DATE_EPOCH) - 1)
++DXVK_SAREK_x86_64_SOURCE_DATE_EPOCH := $(shell expr $(x86_64_SOURCE_DATE_EPOCH) - 1)
++DXVK_SAREK_arm64ec_SOURCE_DATE_EPOCH := $(shell expr $(arm64ec_SOURCE_DATE_EPOCH) - 1)
++
++DXVK_SAREK_SOURCE_ARGS = \
++  --exclude version.h.in \
++
++DXVK_SAREK_arm64ec_CFLAGS = -marm64x
++DXVK_SAREK_arm64ec_LDFLAGS = -marm64x
++
++DXVK_SAREK_MESON_ARGS = -Db_ndebug=true --force-fallback-for=libdisplay-info
++DXVK_SAREK_i386_MESON_ARGS = --bindir=$(DXVK_SAREK_i386_DST)/lib/wine/dxvk-sarek/i386-windows
++DXVK_SAREK_x86_64_MESON_ARGS = --bindir=$(DXVK_SAREK_x86_64_DST)/lib/wine/dxvk-sarek/x86_64-windows
++DXVK_SAREK_x86_64_MESON_ARGS += -Denable_ddraw=false
++DXVK_SAREK_arm64ec_MESON_ARGS = --bindir=$(DXVK_SAREK_arm64ec_DST)/lib/wine/dxvk-sarek/aarch64-windows
++DXVK_SAREK_arm64ec_MESON_ARGS += -Denable_ddraw=false
++DXVK_SAREK_HOST_DEPENDS = glslang
++
++DXVK_SAREK_i386_CFLAGS = -O3 -mno-avx
++DXVK_SAREK_x86_64_CFLAGS = -O3 -mno-avx
++DXVK_SAREK_CPPFLAGS = -msse -msse2
++DXVK_SAREK_LDFLAGS = -static -static-libgcc -static-libstdc++
++
++$(eval $(call rules-source,dxvk-sarek,$(SRCDIR)/extras/dxvk-sarek))
++$(eval $(call rules-meson,dxvk-sarek,i386,windows))
++$(eval $(call rules-meson,dxvk-sarek,x86_64,windows))
++$(eval $(call rules-meson,dxvk-sarek,arm64ec,windows))
++
++$(OBJ)/.dxvk-sarek-post-source:
++	sed -re 's#@VCS_TAG@#$(shell git -C $(SRCDIR)/extras/dxvk-sarek describe --always --abbrev=15 --dirty=0 || echo deadbeef)#' \
++	    $(SRCDIR)/extras/dxvk-sarek/version.h.in > $(DXVK_SAREK_SRC)/version.h.in
++	mkdir -p $(DST_LIBDIR)/wine/dxvk-sarek
++	rm -rf $(DST_LIBDIR)/wine/dxvk-sarek/version
++	echo "$(shell git -C $(SRCDIR)/extras/dxvk-sarek rev-parse HEAD || echo no-git-repo-info) extras/dxvk-sarek" > $(DST_LIBDIR)/wine/dxvk-sarek/version
++	touch $@
++
++default_pfx: dxvk-sarek
+diff --git a/proton b/proton
+index a2aef17f..fbaa9500 100755
+--- a/proton
++++ b/proton
+@@ -1027,6 +1027,9 @@ class CompatData:
+             use_nvapi = (('disablenvapi' not in g_session.compat_config or 'forcenvapi' in g_session.compat_config) and
+                         g_proton.host_pe_arch != "aarch64-windows")
+             use_dxvk_d3d8 = "dxvkd3d8" in g_session.compat_config
++            use_dxvk_sarek = "dxvksarek" in g_session.compat_config and os.path.isdir(g_proton.lib_dir + "wine/dxvk-sarek")
++            if use_dxvk_sarek:
++                use_nvapi = False
+ 
+             builtin_dll_copy = os.environ.get("PROTON_DLL_COPY",
+                     #dxsetup redist
+@@ -1088,6 +1091,7 @@ class CompatData:
+                 builtin_dll_copy,
+                 str(use_nvapi),
+                 str(use_dxvk_d3d8),
++                str(use_dxvk_sarek),
+             ))
+ 
+             # check whether any prefix config has changed
+@@ -1192,10 +1196,11 @@ class CompatData:
+                     try_copy(g_proton.default_pfx_dir + "drive_c/windows/syswow64/" + f + ".dll", "drive_c/windows/syswow64",
+                             prefix=self.prefix_dir, track_file=tracked_files, link_debug=True)
+ 
++                dxvk_dir = "wine/dxvk-sarek" if use_dxvk_sarek else "wine/dxvk"
+                 for f in dxvkfiles:
+-                    try_copy(g_proton.arch_pe_dir("wine/dxvk", False) + f + ".dll", "drive_c/windows/system32",
++                    try_copy(g_proton.arch_pe_dir(dxvk_dir, False) + f + ".dll", "drive_c/windows/system32",
+                             prefix=self.prefix_dir, track_file=tracked_files, link_debug=True)
+-                    try_copy(g_proton.arch_pe_dir("wine/dxvk", True) + f + ".dll", "drive_c/windows/syswow64",
++                    try_copy(g_proton.arch_pe_dir(dxvk_dir, True) + f + ".dll", "drive_c/windows/syswow64",
+                             prefix=self.prefix_dir, track_file=tracked_files, link_debug=True)
+                     g_session.dlloverrides[f] = "n"
+ 
+@@ -1761,6 +1766,7 @@ class Session:
+         if not self.check_environment("PROTON_USE_WINED3D", "wined3d"):
+             self.check_environment("PROTON_USE_WINED3D11", "wined3d")
+         self.check_environment("PROTON_DXVK_D3D8", "dxvkd3d8")
++        self.check_environment("PROTON_DXVK_SAREK", "dxvksarek")
+         self.check_environment("PROTON_NO_D3D11", "nod3d11")
+         self.check_environment("PROTON_NO_D3D10", "nod3d10")
+         self.check_environment("PROTON_NO_FSYNC", "nofsync")
+@@ -1954,6 +1960,11 @@ class Session:
+             self.env["PROTON_DISABLE_HIDRAW"] = "0x054C/0x05C4,0x054C/0x09CC,0x054C/0x0BA0,0x054C/0x0CE6,0x054C/0x0DF2"
+ 
+ 
++        if "dxvksarek" in self.compat_config:
++            threads = os.cpu_count() - (2 if os.cpu_count() > 4 else (1 if os.cpu_count() > 2 else 0))
++            for opt in ("numCompilerThreads", "numAsyncThreads", "numDyasyncThreads"):
++                append_to_env_str(self.env, "DXVK_CONFIG", f"dxvk.{opt}={threads}", ";")
++
+         if "__GLVND_DISALLOW_PATCHING" not in self.env:
+             self.env["__GLVND_DISALLOW_PATCHING"] = "1"
+ 
