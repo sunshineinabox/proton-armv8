@@ -5,9 +5,12 @@ A site is "helper" when it sits in an outline-atomics helper (a __aarch64_* func
 one whose code tests w16 just before, as the helpers do) and so is chosen at run time; anything else
 is "inline" and faults on ARMv8.0. Exit 1 if any inline site is found.
 
-usage: scan-lse.py [--objdump PATH] FILE_OR_DIR...
+usage: scan-lse.py [--objdump PATH] [--allow FILE] FILE_OR_DIR...
+
+--allow names files whose inline sites are accepted, one `<glob> <reason>` per line, the glob relative to
+the directory scanned (# starts a comment). They are reported but do not fail the scan.
 """
-import os, re, subprocess, sys
+import fnmatch, os, re, subprocess, sys
 
 LSE = re.compile(r"\s(cas[a-z]*|casp[a-z]*|swp[a-z]*|ld(add|clr|eor|set|smax|smin|umax|umin)[a-z]*|"
                  r"st(add|clr|eor|set|smax|smin|umax|umin)[a-z]*|ldapr[a-z]*|ldapur[a-z]*)\s")
@@ -54,27 +57,45 @@ def scan(path, objdump):
     return helper, inline
 
 
+def read_allow(path):
+    rules = []
+    for line in open(path, encoding="utf-8"):
+        line = line.split("#", 1)[0].strip()
+        if line:
+            glob, _, reason = line.partition(" ")
+            rules.append((glob, reason.strip()))
+    return rules
+
+
 def main(argv):
-    objdump = "llvm-objdump"
-    if argv[:1] == ["--objdump"]:
-        objdump, argv = argv[1], argv[2:]
+    objdump, allow = "llvm-objdump", []
+    while argv[:1] in (["--objdump"], ["--allow"]):
+        if argv[0] == "--objdump":
+            objdump = argv[1]
+        else:
+            allow = read_allow(argv[1])
+        argv = argv[2:]
     files = []
     for arg in argv:
         if os.path.isdir(arg):
             for root, _, names in os.walk(arg):
-                files += [os.path.join(root, n) for n in sorted(names)]
+                files += [(os.path.join(root, n), os.path.relpath(os.path.join(root, n), arg)) for n in sorted(names)]
         else:
-            files.append(arg)
+            files.append((arg, os.path.basename(arg)))
     bad = 0
-    for path in files:
+    for path, rel in files:
         if os.path.islink(path) or not is_arm64(path):
             continue
         helper, inline = scan(path, objdump)
-        if helper or inline:
-            print(f"{path}  total {helper + len(inline)}  helper {helper}  inline {len(inline)}")
-            for off, mnem, func in inline[:5]:
-                print(f"    {off} {mnem} {func}")
-        bad += len(inline)
+        if not (helper or inline):
+            continue
+        reason = next((r for g, r in allow if fnmatch.fnmatchcase(rel, g)), None)
+        note = f"  allowed: {reason}" if inline and reason is not None else ""
+        print(f"{path}  total {helper + len(inline)}  helper {helper}  inline {len(inline)}{note}")
+        for off, mnem, func in inline[:5]:
+            print(f"    {off} {mnem} {func}")
+        if reason is None:
+            bad += len(inline)
     print(f"inline LSE/RCpc sites: {bad}")
     return 1 if bad else 0
 

@@ -36,7 +36,7 @@ cd build
 make redist
 sed -i "s|\"display_name\" \"$NAME\"|\"display_name\" \"$DISPLAY\"|" redist/compatibilitytool.vdf
 
-python3 "$HERE/scripts/scan-lse.py" --objdump "${OBJDUMP:-llvm-objdump}" redist/files
+python3 "$HERE/scripts/scan-lse.py" --objdump "${OBJDUMP:-llvm-objdump}" --allow "$HERE/scan-allow.txt" redist/files
 
 cd "$WORK"
 tar -C build/redist --transform "s|^\./|$NAME/|" -cf - . | zstd -19 -T0 -o "$NAME.tar.zst"

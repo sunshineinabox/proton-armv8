@@ -17,7 +17,9 @@ CI builds each new Valve tag on GitHub's arm64 runners:
 | experimental | `experimental-11.0-*` | `armv8-experimental-11.0-<date>` (pre-release) |
 
 A release is published only when every native arm64 binary passes `scripts/scan-lse.py`: no LSE/RCpc
-instruction outside the compiler's runtime-checked outline-atomics helpers.
+instruction outside the compiler's runtime-checked outline-atomics helpers. The exceptions are in
+`scan-allow.txt`: today only Xalia's prebuilt arm64 `xalia.exe` (experimental), which runs only for apps
+Proton enables Xalia for.
 
 ## Install
 

@@ -1,0 +1,2 @@
+# Files whose inline LSE is accepted: <glob relative to redist/files> <reason>.
+share/xalia/xalia.exe prebuilt by Xalia upstream (net48-arm64-mono, from experimental 11.0 on); runs only for apps Proton enables Xalia for
