@@ -31,6 +31,20 @@ tar -C ~/.steam/root/compatibilitytools.d --zstd -xf proton-armv8-<tag>.tar.zst
 Restart Steam and pick "Proton … (ARMv8.0)" per game or as the default. `PROTON_DXVK_SAREK=1 %command%` in a
 game's launch options selects DXVK-Sarek.
 
+## FEX
+
+Native x86 Linux games run on arm64 Steam through Valve's FEX tool (app 3127680, `steamapps/common/FEX-Emu`),
+which is built for ARMv8.1+ as well: its binaries have ~390 inline LSE sites. `fex.pin` names the FEX commit
+Valve's tool is built from, and the FEX workflow builds that commit for ARMv8.0 with Steam support
+(`scripts/build-fex.sh`, the same compiler as Valve's) as release `fex-armv8-<describe>`. Valve's tool is
+owners-only on Steam, so the pin is bumped by hand.
+
+The tarball is the tool's folder without Valve's own `fex-compat-tool` and `unshare.py`, which its manifest
+runs: copy those two from `FEX-Emu` into it. Then either put it in `compatibilitytools.d` and pick "FEX
+ARMv8.0" per game, or, while Valve's `VERSIONS.txt` names the same version, copy its `usr/bin/*` and
+`FEXCompatTool` over Valve's. On the Air X (SM6115) at SuperTux's menu, Valve's FEX caused ~3,000 kernel LSE
+emulations a second, this build none.
+
 ## Contents
 
 - `patches/0001-armv8.0.patch`: `-march=armv8-a` for the arm64 Wine sides, and `TUNE_CPU=generic` for FEX.
@@ -38,8 +52,11 @@ game's launch options selects DXVK-Sarek.
   [Proton-CachyOS](https://github.com/CachyOS/proton-cachyos).
 - `sarek.pin`: the DXVK-Sarek commit built.
 - `scripts/build.sh <valve-tag> <workdir>`: the build (Proton's containerized `make redist`, then the scan).
+- `fex.pin`, `scripts/build-fex.sh <workdir>`, `scan-allow-fex.txt`: the FEX build, in a Debian 13 arm64
+  container, and its one scan exception (`FEXGetConfig`'s hand-written fault-granularity probe).
 
 ## Credits
 
 The ARMv8.0 approach follows [Azkali/proton-arm64-a57](https://github.com/Azkali/proton-arm64-a57). DXVK-Sarek
 integration is from Proton-CachyOS. Proton is © Valve and its component authors, under their own licenses.
+FEX is © the FEX-Emu authors, MIT (its LICENSE is in each FEX tarball).

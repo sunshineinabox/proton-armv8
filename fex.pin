@@ -1,0 +1,6 @@
+# Valve's FEX tool (Steam app 3127680, steamapps/common/FEX-Emu): the commit and version its VERSIONS.txt
+# names ("FEX bash", "FEX describe"). Its depots are owners-only, so anonymous steamcmd cannot read them:
+# bump both lines by hand when Valve updates the tool. The device swaps our build into Valve's tool only
+# while the two versions match.
+commit: 37265b109a4bba9e10241972dfcb3d1fdb8f3f9a
+describe: FEX-2607-76-g37265b1

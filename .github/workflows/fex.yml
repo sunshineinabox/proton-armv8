@@ -1,0 +1,59 @@
+name: FEX
+
+# Builds Valve's FEX tool commit (fex.pin) for ARMv8.0 when the pin or the build changes, unless a release
+# fex-armv8-<describe> exists already. Valve's tool is owners-only on Steam, so the pin is bumped by hand.
+
+on:
+  push:
+    branches: [main]
+    paths: [fex.pin, scripts/build-fex.sh, scripts/scan-lse.py, scan-allow-fex.txt, .github/workflows/fex.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: fex
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Version
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          describe=$(sed -n 's/^describe: *//p' fex.pin)
+          echo "describe=$describe" >> "$GITHUB_OUTPUT"
+          gh release view "fex-armv8-$describe" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && echo "released=yes" >> "$GITHUB_OUTPUT" || true
+
+      - name: Build
+        if: steps.pin.outputs.released != 'yes'
+        run: scripts/build-fex.sh "$RUNNER_TEMP/work"
+
+      - name: Release
+        if: steps.pin.outputs.released != 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESCRIBE: ${{ steps.pin.outputs.describe }}
+        run: |
+          f="$RUNNER_TEMP/work/fex-armv8-$DESCRIBE.tar.zst"
+          gh release create "fex-armv8-$DESCRIBE" --latest=false --title "FEX $DESCRIBE (ARMv8.0)" \
+            --notes "Valve's FEX tool (\`$DESCRIBE\`) built for ARMv8.0 (no LSE atomics), with Steam support. Add Valve's \`fex-compat-tool\` and \`unshare.py\` from \`steamapps/common/FEX-Emu\`, then extract into \`compatibilitytools.d\`." \
+            "$f" "$f.sha256" "$f.sha512"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESCRIBE: ${{ steps.pin.outputs.describe }}
+        run: |
+          title="FEX build failed: $DESCRIBE"
+          gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q . ||
+            gh issue create --title "$title" --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."

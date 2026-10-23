@@ -1,0 +1,2 @@
+# Files of the FEX tool whose inline LSE is accepted: <glob relative to the tool's folder> <reason>.
+usr/bin/FEXGetConfig FEX's --test-fault-granularity probe: hand-written ldsetal/caspal, run only when asked for
