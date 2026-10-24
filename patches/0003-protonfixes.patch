@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sunshineinabox <aqemail@gmail.com>
+Date: Sat, 24 Oct 2026 04:00:08 -0700
+Subject: [PATCH 3/3] protonfixes: build umu-protonfixes in and run it as GE-Proton
+ does
+
+Port GE-Proton's protonfixes build rules and its proton hook, so games get umu-protonfixes' per-game fixes by Steam app id or by UMU_ID and STORE; the upscaler upgrades are left out, as they need GE's Wine patch.
+---
+ Makefile.in                 |  2 ++
+ extras/build-protonfixes.mk | 39 +++++++++++++++++++++++++++++++++++++
+ proton                      | 12 ++++++++++++
+ 3 files changed, 53 insertions(+)
+ create mode 100644 extras/build-protonfixes.mk
+
+diff --git a/Makefile.in b/Makefile.in
+index 3b5cdfd..04d7750 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -1467,6 +1467,8 @@ $(DIST_AV1_PATENTS): $(AV1_PATENTS)
+ 
+ all-dist: $(DIST_LICENSE) $(DIST_OFL_LICENSE) $(DIST_AV1_PATENTS)
+ 
++include $(SRC)/extras/build-protonfixes.mk
++
+ 
+ ##
+ ## proton(.py), filelock.py, etc.
+diff --git a/extras/build-protonfixes.mk b/extras/build-protonfixes.mk
+new file mode 100644
+index 0000000..5ff6ec1
+--- /dev/null
++++ b/extras/build-protonfixes.mk
+@@ -0,0 +1,39 @@
++##
++## protonfixes
++##
++
++# umu-protonfixes (Open-Wine-Components/umu-protonfixes), ported from GE-Proton: its per-game fixes run in
++# proton before the game (PROTONFIXES_DISABLE=1 turns them off), with its winetricks, and its cabextract,
++# unzip and pgrep built for the target with Proton's flags. Its source is checked out in extras/protonfixes.
++
++$(eval $(call rules-source,protonfixes,$(SRCDIR)/extras/protonfixes))
++$(eval $(call rules-common,protonfixes,x86_64,unix))
++$(eval $(call rules-common,protonfixes,aarch64,unix))
++
++$(OBJ)/.protonfixes-x86_64-build:
++	cd $(PROTONFIXES_SRC) && \
++	env $(PROTONFIXES_x86_64_ENV) BUILD=$(PROTONFIXES_x86_64_OBJ) TARGET_ARCH=$(TARGET_ARCH) make
++	cd $(PROTONFIXES_SRC) && \
++	env $(PROTONFIXES_x86_64_ENV) BUILD=$(PROTONFIXES_x86_64_OBJ) DIST=$(PROTONFIXES_x86_64_DST) TARGET_ARCH=$(TARGET_ARCH) make install
++	touch $@
++
++$(OBJ)/.protonfixes-aarch64-build:
++	cd $(PROTONFIXES_SRC) && \
++	env $(PROTONFIXES_aarch64_ENV) BUILD=$(PROTONFIXES_aarch64_OBJ) TARGET_ARCH=$(TARGET_ARCH) make
++	cd $(PROTONFIXES_SRC) && \
++	env $(PROTONFIXES_aarch64_ENV) BUILD=$(PROTONFIXES_aarch64_OBJ) DIST=$(PROTONFIXES_aarch64_DST) TARGET_ARCH=$(TARGET_ARCH) make install
++	touch $@
++
++PROTONFIXES_TARGET := $(addprefix $(DST_BASE)/,protonfixes)
++
++$(OBJ)/.protonfixes-x86_64-dist:
++	mkdir -p $(PROTONFIXES_TARGET)
++	rsync --delete -arx $(PROTONFIXES_x86_64_DST)/ $(PROTONFIXES_TARGET)
++	touch $@
++
++$(OBJ)/.protonfixes-aarch64-dist:
++	mkdir -p $(PROTONFIXES_TARGET)
++	rsync --delete -arx $(PROTONFIXES_aarch64_DST)/ $(PROTONFIXES_TARGET)
++	touch $@
++
++all-dist: protonfixes
+diff --git a/proton b/proton
+index cb8793d..1fafac3 100755
+--- a/proton
++++ b/proton
+@@ -39,6 +39,8 @@ from ctypes import c_ssize_t
+ from filelock import FileLock
+ from random import randrange
+ 
++import protonfixes
++
+ #To enable debug logging, copy "user_settings.sample.py" to "user_settings.py"
+ #and edit it if needed.
+ 
+@@ -2214,6 +2216,16 @@ if __name__ == "__main__":
+ 
+     g_session.init_session(sys.argv[1] != "runinprefix")
+ 
++    # protonfixes execution
++    protonfixes.setup(g_session.env, "PATH", ld_path_var, prepend_to_env_str)
++    protonfixes.setup_mount_drives(setup_dir_drive)
++    protonfixes.winetricks(g_session.env, g_proton.wine_bin, g_proton.wineserver_bin)
++    # HACK: handle DXVK_FRAME_RATE and VKD3D_FRAME_RATE through DXVK_CONFIG
++    protonfixes.setup_frame_rate(g_session.env, append_to_env_str)
++    g_session.check_environment("PROTON_LOCAL_SHADER_CACHE", "localshadercache")
++    protonfixes.setup_local_shader_cache(g_session.compat_config, g_session.env)
++    protonfixes.execute()
++
+     #determine mode
+     rc = 0
+     if sys.argv[1] == "run":
+-- 
+2.55.0
+

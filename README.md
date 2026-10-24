@@ -2,7 +2,8 @@
 
 Valve's [Proton](https://github.com/ValveSoftware/Proton) for arm64 CPUs **without LSE atomics** (ARMv8.0:
 Cortex-A53/A57/A72/A73, e.g. Snapdragon 662 / SM6115, Tegra X1), with
-[DXVK-Sarek](https://github.com/pythonlover02/DXVK-Sarek) built in.
+[DXVK-Sarek](https://github.com/pythonlover02/DXVK-Sarek) and
+[umu-protonfixes](https://github.com/Open-Wine-Components/umu-protonfixes) built in.
 
 Valve builds Proton ARM64 with `-march=armv8.2-a`, so on these CPUs its Wine, DXVK and FEX components fault
 on the first atomic instruction, or run only through slow kernel emulation. These builds use `-march=armv8-a`.
@@ -31,6 +32,15 @@ tar -C ~/.steam/root/compatibilitytools.d --zstd -xf proton-armv8-<tag>.tar.zst
 Restart Steam and pick "Proton … (ARMv8.0)" per game or as the default. `PROTON_DXVK_SAREK=1 %command%` in a
 game's launch options selects DXVK-Sarek.
 
+## protonfixes
+
+Before each game, Proton runs umu-protonfixes' fixes for it, as GE-Proton does: a Steam game's by its app id, a
+GOG or Epic game's by `UMU_ID` and `STORE` (`gog`, `egs`), which umu-run or a launcher sets from the
+[umu-database](https://github.com/Open-Wine-Components/umu-database). `PROTONFIXES_DISABLE=1 %command%` turns
+them off for a game. They were written for x86 GE-Proton: their `winetricks` verbs install x86
+redistributables, which run through FEX here, slowly, and some fixes may not work. GE's upscaler upgrades
+(`PROTON_DLSS_UPGRADE` and the like) are not included, as they need GE's Wine patch.
+
 ## FEX
 
 Native x86 Linux games run on arm64 Steam through Valve's FEX tool (app 3127680, `steamapps/common/FEX-Emu`),
@@ -51,6 +61,10 @@ emulations a second, this build none.
 - `patches/0002-dxvk-sarek.patch`: DXVK-Sarek's build rules and its `PROTON_DXVK_SAREK` switch, ported from
   [Proton-CachyOS](https://github.com/CachyOS/proton-cachyos).
 - `sarek.pin`: the DXVK-Sarek commit built.
+- `patches/0003-protonfixes.patch`: umu-protonfixes' build rules and GE-Proton's protonfixes hook in `proton`,
+  ported from [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom). Its cabextract, unzip and pgrep
+  build with the same flags; the scan covers them and the prebuilt zenity it downloads.
+- `protonfixes.pin`: the umu-protonfixes commit built, bumped by hand.
 - `scripts/build.sh <valve-tag> <workdir>`: the build (Proton's containerized `make redist`, then the scan).
 - `fex.pin`, `scripts/build-fex.sh <workdir>`, `scan-allow-fex.txt`: the FEX build, in a Debian 13 arm64
   container, and its one scan exception (`FEXGetConfig`'s hand-written fault-granularity probe).
@@ -58,5 +72,6 @@ emulations a second, this build none.
 ## Credits
 
 The ARMv8.0 approach follows [Azkali/proton-arm64-a57](https://github.com/Azkali/proton-arm64-a57). DXVK-Sarek
-integration is from Proton-CachyOS. Proton is © Valve and its component authors, under their own licenses.
+integration is from Proton-CachyOS, protonfixes integration from GE-Proton. Proton is © Valve and its component
+authors, under their own licenses; umu-protonfixes is © its authors, BSD-2-Clause.
 FEX is © the FEX-Emu authors, MIT (its LICENSE is in each FEX tarball).

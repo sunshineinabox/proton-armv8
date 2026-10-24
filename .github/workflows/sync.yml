@@ -109,7 +109,7 @@ jobs:
           [ "${{ steps.channel.outputs.name }}" = experimental ] && prerelease=--prerelease
           f="$RUNNER_TEMP/work/proton-armv8-$TAG.tar.zst"
           gh release create "armv8-$TAG" $prerelease --title "Proton ${TAG#*-} (ARMv8.0)" \
-            --notes "Valve's \`$TAG\` built for ARMv8.0 (no LSE atomics), with DXVK-Sarek (\`PROTON_DXVK_SAREK=1\`). Extract into \`compatibilitytools.d\`." \
+            --notes "Valve's \`$TAG\` built for ARMv8.0 (no LSE atomics), with DXVK-Sarek (\`PROTON_DXVK_SAREK=1\`) and umu-protonfixes (\`PROTONFIXES_DISABLE=1\` turns them off). Extract into \`compatibilitytools.d\`." \
             "$f" "$f.sha256" "$f.sha512"
 
       - name: Report failure

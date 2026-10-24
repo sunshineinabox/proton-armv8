@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build Valve's Proton for arm64 CPUs without LSE atomics (ARMv8.0), with DXVK-Sarek built in.
+# Build Valve's Proton for arm64 CPUs without LSE atomics (ARMv8.0), with DXVK-Sarek and umu-protonfixes
+# built in.
 #
 #   build.sh <valve-tag> <workdir>
 #
@@ -29,6 +30,11 @@ git clone --filter=tree:0 "$SAREK_URL" proton/extras/dxvk-sarek
 git -C proton/extras/dxvk-sarek checkout --quiet "$SAREK_REV"
 git -C proton/extras/dxvk-sarek submodule update --init --recursive --filter=tree:0
 
+read -r PROTONFIXES_URL PROTONFIXES_REV < "$HERE/protonfixes.pin"
+git clone --filter=tree:0 "$PROTONFIXES_URL" proton/extras/protonfixes
+git -C proton/extras/protonfixes checkout --quiet "$PROTONFIXES_REV"
+git -C proton/extras/protonfixes submodule update --init --recursive --filter=tree:0
+
 mkdir -p build
 cd build
 ../proton/configure.sh --build-name="$NAME" --target-arch=arm64 \
@@ -36,7 +42,8 @@ cd build
 make redist
 sed -i "s|\"display_name\" \"$NAME\"|\"display_name\" \"$DISPLAY\"|" redist/compatibilitytool.vdf
 
-python3 "$HERE/scripts/scan-lse.py" --objdump "${OBJDUMP:-llvm-objdump}" --allow "$HERE/scan-allow.txt" redist/files
+python3 "$HERE/scripts/scan-lse.py" --objdump "${OBJDUMP:-llvm-objdump}" --allow "$HERE/scan-allow.txt" redist/files \
+    redist/protonfixes
 
 cd "$WORK"
 tar -C build/redist --transform "s|^\./|$NAME/|" -cf - . | zstd -19 -T0 -o "$NAME.tar.zst"
