@@ -10,12 +10,18 @@ on the first atomic instruction, or run only through slow kernel emulation. Thes
 
 ## Releases
 
-CI builds each new Valve tag on GitHub's arm64 runners:
+CI builds each new Valve and GE-Proton tag on GitHub's arm64 runners:
 
-| Channel | Valve tags | Release tag |
+| Channel | Tags | Release tag |
 |---|---|---|
-| stable | `proton-11.0-*` (no betas) | `armv8-proton-11.0-<n>` |
-| experimental | `experimental-11.0-*` | `armv8-experimental-11.0-<date>` (pre-release) |
+| stable | Valve's `proton-11.0-*` (no betas) | `armv8-proton-11.0-<n>` |
+| experimental | Valve's `experimental-11.0-*` | `armv8-experimental-11.0-<date>` (pre-release) |
+| ge | [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom)'s `GE-Proton<n>-<m>` | `armv8-GE-Proton<n>-<m>` (never marked latest) |
+
+GE publishes aarch64 builds of its own, with Valve's `-march=armv8.2-a`. Ours take its tree as GE's CI
+builds it (`protonprep-valve-staging.sh`, its strip patch) with patches 0001 and 0002; GE has
+umu-protonfixes already, with the Wine patches some of its fixes expect (wine-staging's
+`HideWineExports`, the upscaler DLL overrides).
 
 A release is published only when every native arm64 binary passes `scripts/scan-lse.py`: no LSE/RCpc
 instruction outside the compiler's runtime-checked outline-atomics helpers. The exceptions are in
@@ -29,7 +35,7 @@ mkdir -p ~/.steam/root/compatibilitytools.d
 tar -C ~/.steam/root/compatibilitytools.d --zstd -xf proton-armv8-<tag>.tar.zst
 ```
 
-Restart Steam and pick "Proton … (ARMv8.0)" per game or as the default. `PROTON_DXVK_SAREK=1 %command%` in a
+Restart Steam and pick "Proton … (ARMv8.0)" or "GE-Proton… (ARMv8.0)" per game or as the default. `PROTON_DXVK_SAREK=1 %command%` in a
 game's launch options selects DXVK-Sarek.
 
 ## protonfixes
@@ -65,7 +71,8 @@ emulations a second, this build none.
   ported from [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom). Its cabextract, unzip and pgrep
   build with the same flags; the scan covers them and the prebuilt zenity it downloads.
 - `protonfixes.pin`: the umu-protonfixes commit built, bumped by hand.
-- `scripts/build.sh <valve-tag> <workdir>`: the build (Proton's containerized `make redist`, then the scan).
+- `scripts/build.sh <tag> <workdir>`: the build of a Valve or GE-Proton tag (Proton's containerized
+  `make redist`, then the scan).
 - `fex.pin`, `scripts/build-fex.sh <workdir>`, `scan-allow-fex.txt`: the FEX build, in a Debian 13 arm64
   container, and its one scan exception (`FEXGetConfig`'s hand-written fault-granularity probe).
 

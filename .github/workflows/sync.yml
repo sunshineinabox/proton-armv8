@@ -1,7 +1,8 @@
 name: Sync
 
-# Builds each new Valve Proton tag for ARMv8.0: the newest stable (proton-11.0-*, no betas) and the
-# newest experimental (experimental-11.0-*), unless a release armv8-<tag> exists already.
+# Builds each new Proton tag for ARMv8.0: Valve's newest stable (proton-11.0-*, no betas) and newest
+# experimental (experimental-11.0-*), and GE-Proton's newest (GE-Proton<n>-<m>), unless a release
+# armv8-<tag> exists already.
 
 on:
   schedule:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Valve tag to build (empty: the newest of each channel)'
+        description: 'Valve or GE-Proton tag to build (empty: the newest of each channel)'
         required: false
         default: ''
 
@@ -42,6 +43,11 @@ jobs:
               [ -n "$newest" ] || continue
               gh release view "armv8-$newest" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || tags="$tags $newest"
             done
+            ge=$(git ls-remote --tags --refs https://github.com/GloriousEggroll/proton-ge-custom.git 'refs/tags/GE-Proton*' |
+                 sed 's#.*refs/tags/##' | grep -E '^GE-Proton[0-9]+-[0-9]+$' | sort -V | tail -1)
+            if [ -n "$ge" ] && ! gh release view "armv8-$ge" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              tags="$tags $ge"
+            fi
           fi
           echo "tags=$(printf '%s\n' $tags | jq -Rc . | jq -cs 'map(select(. != ""))')" >> "$GITHUB_OUTPUT"
 
@@ -82,7 +88,7 @@ jobs:
 
       - name: Channel
         id: channel
-        run: case "$TAG" in experimental-*) echo "name=experimental" ;; *) echo "name=stable" ;; esac >> "$GITHUB_OUTPUT"
+        run: case "$TAG" in experimental-*) echo "name=experimental" ;; GE-Proton*) echo "name=ge" ;; *) echo "name=stable" ;; esac >> "$GITHUB_OUTPUT"
 
       - name: Restore ccache
         uses: actions/cache/restore@v5
@@ -105,11 +111,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          prerelease=
-          [ "${{ steps.channel.outputs.name }}" = experimental ] && prerelease=--prerelease
+          flags= title="Proton ${TAG#*-} (ARMv8.0)" source="Valve's \`$TAG\`"
+          case "${{ steps.channel.outputs.name }}" in
+            experimental) flags=--prerelease ;;
+            ge) flags=--latest=false title="$TAG (ARMv8.0)" source="GE-Proton's \`$TAG\`" ;;
+          esac
           f="$RUNNER_TEMP/work/proton-armv8-$TAG.tar.zst"
-          gh release create "armv8-$TAG" $prerelease --title "Proton ${TAG#*-} (ARMv8.0)" \
-            --notes "Valve's \`$TAG\` built for ARMv8.0 (no LSE atomics), with DXVK-Sarek (\`PROTON_DXVK_SAREK=1\`) and umu-protonfixes (\`PROTONFIXES_DISABLE=1\` turns them off). Extract into \`compatibilitytools.d\`." \
+          gh release create "armv8-$TAG" $flags --title "$title" \
+            --notes "$source built for ARMv8.0 (no LSE atomics), with DXVK-Sarek (\`PROTON_DXVK_SAREK=1\`) and umu-protonfixes (\`PROTONFIXES_DISABLE=1\` turns them off). Extract into \`compatibilitytools.d\`." \
             "$f" "$f.sha256" "$f.sha512"
 
       - name: Report failure
