@@ -25,6 +25,13 @@ GE-Proton*)  # GE-Proton has umu-protonfixes already: not patch 0003
     DISPLAY="Proton ${TAG#*-} (ARMv8.0)" ;;
 esac
 
+patch_protonfixes() {  # patches/protonfixes on the umu-protonfixes in $1, then their test
+    for p in "$HERE"/patches/protonfixes/*.patch; do
+        patch -d "$1" -Np1 --no-backup-if-mismatch -i "$p"
+    done
+    python3 -B "$HERE/scripts/test-protonfixes-arm64.py" "$1"
+}
+
 mkdir -p "$WORK"
 cd "$WORK"
 
@@ -40,7 +47,8 @@ GE-Proton*)
     # As GE's own CI: its patches into the submodules (it exits non-zero when it skips one), and its
     # strip-at-compile-time patch, for the runner's disk.
     (cd proton && ./patches/protonprep-valve-staging.sh) || true
-    patch -d proton -Np1 -i .github/patches/0001-build-strip-binaries-early.patch ;;
+    patch -d proton -Np1 -i .github/patches/0001-build-strip-binaries-early.patch
+    patch_protonfixes proton/protonfixes ;;
 esac
 
 read -r SAREK_URL SAREK_REV < "$HERE/sarek.pin"
@@ -53,6 +61,7 @@ if [[ $TAG != GE-Proton* ]]; then
     git clone --filter=tree:0 "$PROTONFIXES_URL" proton/extras/protonfixes
     git -C proton/extras/protonfixes checkout --quiet "$PROTONFIXES_REV"
     git -C proton/extras/protonfixes submodule update --init --recursive --filter=tree:0
+    patch_protonfixes proton/extras/protonfixes
 fi
 
 mkdir -p build

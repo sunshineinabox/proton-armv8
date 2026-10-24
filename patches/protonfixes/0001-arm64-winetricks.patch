@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sunshineinabox <aqemail@gmail.com>
+Date: Sat, 24 Oct 2026 09:56:39 -0700
+Subject: [PATCH] util: on ARM64, skip winetricks verbs FEX cannot install, and
+ do not retry or wait forever
+
+Verbs whose x86 installers do not work through FEX (.NET, IE, WebView2, Ubisoft Connect) are skipped unless PROTONFIXES_ARM64_VERBS names them, a failed verb is not retried for a week, winetricks stops after PROTONFIXES_WINETRICKS_TIMEOUT seconds, and the x86-64-only EasyAntiCheat and BattlEye runtimes are not installed.
+---
+ util.py | 74 +++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 72 insertions(+), 2 deletions(-)
+
+diff --git a/util.py b/util.py
+index 08b7087..7461b6e 100644
+--- a/util.py
++++ b/util.py
+@@ -2,6 +2,7 @@
+ 
+ import configparser
+ import os
++import platform
+ import sys
+ import re
+ import shutil
+@@ -11,6 +12,7 @@ import zipfile
+ import subprocess
+ import urllib.request
+ import functools
++import time
+ 
+ from enum import Enum
+ from pathlib import Path
+@@ -320,9 +322,59 @@ def check_internet() -> bool:
+         return False
+ 
+ 
++# proton-armv8: on ARM64, x86 installers run through FEX. The verbs whose installers do not work that way
++# are skipped (the rest of a fix still runs); PROTONFIXES_ARM64_VERBS=<verb>,... or =all runs them anyway.
++# A verb that fails is not tried again for a week, and winetricks stops after
++# PROTONFIXES_WINETRICKS_TIMEOUT seconds (900): an installer that hangs would hold the game's launch.
++ARM64 = platform.machine() in ('aarch64', 'arm64')
++ARM64_SKIP = re.compile(r'(dotnet.*|xna\d+|mdx|ie8|powershell|webview2|ubisoftconnect)')
++ARM64_FAILED = 'winetricks.log.arm64-failed'  # "<verb> <unix time>" lines
++ARM64_RETRY = 7 * 86400
++
++
++def _arm64_verbs(verb: str) -> str:
++    """verb without the verbs ARM64_SKIP names, unless PROTONFIXES_ARM64_VERBS lets them run"""
++    allow = os.environ.get('PROTONFIXES_ARM64_VERBS', '').split(',')
++    keep = []
++    for name in verb.split(' '):
++        if ARM64_SKIP.fullmatch(name) and 'all' not in allow and name not in allow:
++            log.info(f'Skipping winetricks "{name}" on ARM64: its installer does not run through FEX '
++                     f'(PROTONFIXES_ARM64_VERBS={name} runs it)')
++        else:
++            keep.append(name)
++    return ' '.join(keep)
++
++
++def _arm64_failed_recently(verb: str) -> bool:
++    """True if verb failed in this prefix less than ARM64_RETRY ago"""
++    try:
++        lines = (protonprefix() / ARM64_FAILED).read_text(encoding='ascii').splitlines()
++    except OSError:
++        return False
++    for line in lines:
++        name, _, when = line.rpartition(' ')
++        if name == verb and when.isdigit() and time.time() - int(when) < ARM64_RETRY:
++            return True
++    return False
++
++
++def _winetricks_timeout() -> int:
++    try:
++        return max(int(os.environ.get('PROTONFIXES_WINETRICKS_TIMEOUT', '900')), 1)
++    except ValueError:
++        return 900
++
++
+ def protontricks(verb: str) -> bool:
+     """Runs winetricks if available"""
++    if ARM64:
++        verb = _arm64_verbs(verb)
++        if not verb:
++            return False
+     if not checkinstalled(verb):
++        if ARM64 and _arm64_failed_recently(verb):
++            log.info(f'Winetricks "{verb}" failed here on ARM64 less than a week ago: not tried again yet')
++            return False
+         if check_internet():
+             # Proceed with your function logic here
+             pass
+@@ -367,14 +419,26 @@ def protontricks(verb: str) -> bool:
+ 
+             log.info(f'Using winetricks verb "{verb}"')
+             subprocess.call([env['WINESERVER'], '-w'], env=env)
+-            with subprocess.Popen(winetricks_cmd, env=env) as process:
+-                process.wait()
++            with subprocess.Popen(winetricks_cmd, env=env, start_new_session=ARM64) as process:
++                try:
++                    process.wait(timeout=_winetricks_timeout() if ARM64 else None)
++                except subprocess.TimeoutExpired:
++                    log.warn(f'Winetricks "{verb}" still running after {_winetricks_timeout()} s: stopping it')
++                    try:
++                        os.killpg(process.pid, signal.SIGKILL)
++                    except ProcessLookupError:
++                        pass
++                    subprocess.call([env['WINESERVER'], '-k'], env=env)
++                    process.wait()
+             _killhanging()
+ 
+             # Check if the verb failed (eg. access denied)
+             retc = process.returncode
+             if retc != 0:
+                 log.warn(f'Winetricks failed running verb "{verb}" with status {retc}.')
++                if ARM64:
++                    with open(protonprefix() / ARM64_FAILED, 'a', encoding='ascii') as failed:
++                        failed.write(f'{verb} {int(time.time())}\n')
+                 return False
+ 
+             # Check if verb recorded to winetricks log
+@@ -800,11 +864,17 @@ def set_dxvk_option(
+ 
+ def install_eac_runtime() -> None:
+     """Install Proton Easyanticheat Runtime"""
++    if ARM64:  # proton-armv8: its Linux libraries are x86-64 only
++        log.info('Skipping the Proton EasyAntiCheat Runtime on ARM64: it is x86-64 only')
++        return
+     install_app('1826330')
+ 
+ 
+ def install_battleye_runtime() -> None:
+     """Install Proton BattlEye Runtime"""
++    if ARM64:  # proton-armv8: its Linux libraries are x86-64 only
++        log.info('Skipping the Proton BattlEye Runtime on ARM64: it is x86-64 only')
++        return
+     install_app('1161040')
+ 
+ 
+-- 
+2.55.0
+

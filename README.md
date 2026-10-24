@@ -43,9 +43,21 @@ game's launch options selects DXVK-Sarek.
 Before each game, Proton runs umu-protonfixes' fixes for it, as GE-Proton does: a Steam game's by its app id, a
 GOG or Epic game's by `UMU_ID` and `STORE` (`gog`, `egs`), which umu-run or a launcher sets from the
 [umu-database](https://github.com/Open-Wine-Components/umu-database). `PROTONFIXES_DISABLE=1 %command%` turns
-them off for a game. They were written for x86 GE-Proton: their `winetricks` verbs install x86
-redistributables, which run through FEX here, slowly, and some fixes may not work. GE's upscaler upgrades
-(`PROTON_DLSS_UPGRADE` and the like) are not included, as they need GE's Wine patch.
+them off for a game.
+
+They were written for x86 GE-Proton: their `winetricks` verbs install x86 redistributables, which run
+through FEX here. Both builds patch protonfixes for that (`patches/protonfixes`):
+
+- verbs whose installers do not run through FEX (.NET, XNA, `mdx`, `ie8`, `powershell`, `webview2`,
+  `ubisoftconnect`) are skipped, and the rest of the fix still runs; `PROTONFIXES_ARM64_VERBS=<verb>,...`
+  (or `=all`) runs them anyway;
+- a verb that fails is not tried again in that prefix for a week (`pfx/winetricks.log.arm64-failed`);
+- winetricks is stopped after `PROTONFIXES_WINETRICKS_TIMEOUT` seconds (900), so a hung installer cannot
+  hold a launch;
+- the x86-64-only EasyAntiCheat and BattlEye runtimes are not installed.
+
+The Valve builds do not have GE's upscaler upgrades (`PROTON_DLSS_UPGRADE` and the like), which need GE's
+Wine patch.
 
 ## FEX
 
@@ -71,6 +83,8 @@ emulations a second, this build none.
   ported from [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom). Its cabextract, unzip and pgrep
   build with the same flags; the scan covers them and the prebuilt zenity it downloads.
 - `protonfixes.pin`: the umu-protonfixes commit built, bumped by hand.
+- `patches/protonfixes/`: our patches on protonfixes, in both builds (the ARM64 winetricks handling above);
+  `scripts/test-protonfixes-arm64.py <dir>` checks them, and the build runs it before compiling.
 - `scripts/build.sh <tag> <workdir>`: the build of a Valve or GE-Proton tag (Proton's containerized
   `make redist`, then the scan).
 - `fex.pin`, `scripts/build-fex.sh <workdir>`, `scan-allow-fex.txt`: the FEX build, in a Debian 13 arm64
