@@ -19,7 +19,7 @@ CI builds each new Valve and GE-Proton tag on GitHub's arm64 runners:
 | ge | [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom)'s `GE-Proton<n>-<m>` | `armv8-GE-Proton<n>-<m>` (never marked latest) |
 
 GE publishes aarch64 builds of its own, with Valve's `-march=armv8.2-a`. Ours take its tree as GE's CI
-builds it (`protonprep-valve-staging.sh`, its strip patch) with patches 0001 and 0002; GE has
+prepares it (`protonprep-valve-staging.sh`; no `-ggdb`, for the runner's disk) with patches 0001 and 0002; GE has
 umu-protonfixes already, with the Wine patches some of its fixes expect (wine-staging's
 `HideWineExports`, the upscaler DLL overrides).
 

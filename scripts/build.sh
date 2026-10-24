@@ -44,10 +44,11 @@ git -C proton -c user.name=proton-armv8 -c user.email=proton-armv8@users.noreply
     am -C0 "${PATCHES[@]}"
 case "$TAG" in
 GE-Proton*)
-    # As GE's own CI: its patches into the submodules (it exits non-zero when it skips one), and its
-    # strip-at-compile-time patch, for the runner's disk.
+    # As GE's own CI: its patches into the submodules (it exits non-zero when it skips one). Its CI also
+    # swaps -ggdb for -s in CFLAGS, for the runner's disk; under the arm64 SDK's clang, -s at compile time
+    # fails meson's checks (dav1d: "Atomics not supported"), so only -ggdb goes (dist strips anyway).
     (cd proton && ./patches/protonprep-valve-staging.sh) || true
-    patch -d proton -Np1 -i .github/patches/0001-build-strip-binaries-early.patch
+    sed -i 's/^CFLAGS += -ggdb /CFLAGS += /' proton/Makefile.in
     patch_protonfixes proton/protonfixes ;;
 esac
 
