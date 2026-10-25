@@ -70,6 +70,11 @@ cd build
 ../proton/configure.sh --build-name="$NAME" --target-arch=arm64 \
     --container-engine="${CONTAINER_ENGINE:-docker}" ${CCACHE:+"$CCACHE"}
 make redist
+case "$TAG" in
+GE-Proton*)  # GE's redist renames redist/ to the build's name and tars it
+    mv "$NAME" redist
+    rm -f "$NAME.tar.gz" "$NAME.sha512sum" SHA256SUMS ;;
+esac
 sed -i "s|\"display_name\" \"$NAME\"|\"display_name\" \"$DISPLAY\"|" redist/compatibilitytool.vdf
 
 python3 "$HERE/scripts/scan-lse.py" --objdump "${OBJDUMP:-llvm-objdump}" --allow "$HERE/scan-allow.txt" redist/files \
